@@ -158,12 +158,12 @@ sudo ~/03-setup-https.sh your-domain.com
    - **密钥**：任意值（如 `sk-copilot`，Copilot Proxy 不校验密钥）
    - **模型**：手动添加以下模型
      ```
-     gpt-4o, gpt-4o-mini, gpt-4.1, gpt-4.1-mini, gpt-4.1-nano,
+     claude-opus-4.6-1m, claude-opus-4.6, claude-opus-4.5,
+     claude-sonnet-4.6, claude-sonnet-4.5, claude-sonnet-4, claude-haiku-4.5,
      gpt-5.4, gpt-5.4-mini, gpt-5.3-codex, gpt-5.2-codex, gpt-5.2,
-     gpt-5.1-codex, gpt-5.1, gpt-5.1-codex-mini, gpt-5-mini,
-     claude-sonnet-4, claude-sonnet-4-thinking, claude-3.5-sonnet,
-     o1, o1-mini, o3, o3-mini, o4-mini,
-     gemini-2.0-flash, gemini-2.5-pro
+     gpt-5.1, gpt-5.1-codex, gpt-5.1-codex-mini, gpt-5.1-codex-max, gpt-5-mini,
+     gpt-4o, gpt-4o-mini, gpt-4.1, gpt-4,
+     gemini-3.1-pro-preview, gemini-3-pro-preview, gemini-3-flash-preview, gemini-2.5-pro
      ```
 3. 点击 **提交**
 4. 测试渠道连接
