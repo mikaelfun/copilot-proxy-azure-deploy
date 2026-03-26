@@ -168,6 +168,35 @@ sudo ~/03-setup-https.sh your-domain.com
 3. 点击 **提交**
 4. 测试渠道连接
 
+> ⚠️ **重要：Claude 模型名映射**
+> 
+> new-api 检测到模型名含 `claude-` 时，会自动切换为 Anthropic 格式（`/v1/messages`），
+> 但 Copilot Proxy 只支持 OpenAI 格式（`/chat/completions`），导致 404 错误。
+> 
+> **解决方案**：使用模型名映射，用不含 `claude-` 的自定义名称：
+> 
+> 1. 在渠道的模型列表中，用自定义名替代 Claude 原始名，例如：
+>    ```
+>    copilot-opus-1m, copilot-opus, copilot-opus-45,
+>    copilot-sonnet, copilot-sonnet-45, copilot-sonnet-4, copilot-haiku
+>    ```
+> 2. 在渠道设置的**「模型重定向」**中配置映射：
+>    ```
+>    copilot-opus-1m => claude-opus-4.6-1m
+>    copilot-opus => claude-opus-4.6
+>    copilot-opus-45 => claude-opus-4.5
+>    copilot-sonnet => claude-sonnet-4.6
+>    copilot-sonnet-45 => claude-sonnet-4.5
+>    copilot-sonnet-4 => claude-sonnet-4
+>    copilot-haiku => claude-haiku-4.5
+>    ```
+> 3. 这样 new-api 用 OpenAI 格式发送请求，而 Copilot Proxy 收到的 model 参数仍是正确的 Claude 模型名
+>
+> GPT 和 Gemini 模型**无需映射**，直接使用原始名称即可。
+> 
+> **渠道测试注意**：测试时 Endpoint Type 请选择 **Auto-detect** 或 **OpenAI**，不要选 Anthropic。
+> 如果测试显示 Failed 但实际 Playground 能用，属于正常现象（测试使用非流式请求，某些模型仅支持流式）。
+
 #### 创建 API Key
 
 1. 进入 **令牌** → **添加新的令牌**
