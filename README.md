@@ -327,7 +327,7 @@ sudo docker start new-api
 
 ## 安全注意事项
 
-1. **⚠️ 立即修改 new-api 默认密码**（默认 root/123456）
+1. **⚠️ 首次访问 new-api 时会提示创建管理员账号**，请设置强密码
 2. **NSG 规则**：生产环境建议限制 3000 端口的来源 IP，仅通过 Nginx 反代访问
 3. **OAuth Token**：Token 保存在 `~/.local/share/copilot-proxy/` 数据目录中
 4. **HTTPS**：强烈建议配置 HTTPS，防止 API Key 在传输中泄露
