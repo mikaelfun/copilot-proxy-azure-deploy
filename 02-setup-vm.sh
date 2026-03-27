@@ -72,11 +72,16 @@ else
     success "Docker 安装完成"
 fi
 
-# ========== 3. 安装 Python3 + venv ==========
-step "安装 Python3 及虚拟环境工具..."
+# ========== 3. 安装 Node.js 22 ==========
+step "安装 Node.js 22..."
 
-apt-get install -y -qq python3 python3-venv python3-pip git
-success "Python3 安装完成"
+if command -v node &>/dev/null; then
+    warn "Node.js 已安装 ($(node -v))，跳过"
+else
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y -qq nodejs
+    success "Node.js $(node -v) 安装完成"
+fi
 
 # ========== 4. 安装 Nginx + Certbot ==========
 step "安装 Nginx 和 Certbot..."
@@ -86,52 +91,18 @@ systemctl enable nginx
 systemctl start nginx
 success "Nginx 安装完成"
 
-# ========== 5. 克隆 Copilot Proxy ==========
-step "克隆 Copilot Proxy 仓库..."
+# ========== 5. 安装 Copilot Proxy (npm) ==========
+step "安装 @jer-y/copilot-proxy..."
 
-PROXY_DIR="/opt/copilot-proxy"
-
-if [[ -d "$PROXY_DIR/Copilot_Proxy" ]]; then
-    warn "Copilot Proxy 已存在，拉取最新代码..."
-    cd "$PROXY_DIR/Copilot_Proxy"
-    git pull || warn "git pull 失败，使用现有代码"
+if command -v copilot-proxy &>/dev/null; then
+    warn "copilot-proxy 已安装，更新到最新版本..."
+    npm install -g @jer-y/copilot-proxy
 else
-    mkdir -p "$PROXY_DIR"
-    cd "$PROXY_DIR"
-    git clone https://github.com/Open-Copilot-Proxy/Copilot_Proxy.git
-    success "仓库克隆完成"
+    npm install -g @jer-y/copilot-proxy
 fi
+success "copilot-proxy $(copilot-proxy --version 2>/dev/null || echo '') 安装完成"
 
-# ========== 6. 创建 Python 虚拟环境 ==========
-step "创建 Python 虚拟环境并安装依赖..."
-
-VENV_DIR="$PROXY_DIR/venv"
-
-if [[ -d "$VENV_DIR" ]]; then
-    warn "虚拟环境已存在，跳过创建"
-else
-    python3 -m venv "$VENV_DIR"
-    success "虚拟环境创建完成"
-fi
-
-"$VENV_DIR/bin/pip" install --quiet --upgrade pip
-"$VENV_DIR/bin/pip" install --quiet flask requests
-success "Python 依赖安装完成"
-
-# ========== 7. 应用 Copilot Proxy 补丁 ==========
-step "应用 Copilot Proxy 代码补丁..."
-
-PATCHER="$REAL_HOME/copilot_proxy_patches.py"
-
-if [[ -f "$PATCHER" ]]; then
-    python3 "$PATCHER"
-    success "补丁应用完成"
-else
-    warn "未找到 copilot_proxy_patches.py ($PATCHER)，跳过补丁"
-    warn "请手动将补丁脚本上传到 VM 后执行: python3 $PATCHER"
-fi
-
-# ========== 8. 部署 new-api Docker 容器 ==========
+# ========== 6. 部署 new-api Docker 容器 ==========
 step "部署 new-api Docker 容器..."
 
 # 创建数据目录
@@ -158,7 +129,7 @@ else
     success "new-api 容器已启动"
 fi
 
-# ========== 9. 创建 systemd 服务 ==========
+# ========== 7. 创建 systemd 服务 ==========
 step "创建 Copilot Proxy systemd 服务..."
 
 cat > /etc/systemd/system/copilot-proxy.service << 'EOF'
@@ -169,11 +140,10 @@ Wants=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/copilot-proxy/Copilot_Proxy
-ExecStart=/opt/copilot-proxy/venv/bin/python main.py
+User=root
+ExecStart=/usr/bin/copilot-proxy start --port 15432
 Restart=always
-RestartSec=10
-Environment=PYTHONUNBUFFERED=1
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -183,7 +153,7 @@ systemctl daemon-reload
 systemctl enable copilot-proxy
 success "systemd 服务配置完成"
 
-# ========== 10. 配置 Nginx 默认代理（HTTP） ==========
+# ========== 8. 配置 Nginx 默认代理（HTTP） ==========
 step "配置 Nginx HTTP 反向代理..."
 
 cat > /etc/nginx/sites-available/new-api << 'NGINXEOF'
@@ -221,12 +191,13 @@ echo -e "${GREEN}═════════════════════
 echo ""
 echo -e "  已部署组件:"
 echo -e "    ${GREEN}●${NC} Docker           — 运行中"
+echo -e "    ${GREEN}●${NC} Node.js          — $(node -v)"
 echo -e "    ${GREEN}●${NC} new-api          — http://localhost:3000"
 echo -e "    ${GREEN}●${NC} Nginx            — http://localhost:80"
-echo -e "    ${YELLOW}●${NC} Copilot Proxy    — 需要先完成 OAuth 授权"
+echo -e "    ${YELLOW}●${NC} Copilot Proxy    — 需要先完成 GitHub 授权"
 echo ""
 echo -e "  ${YELLOW}下一步操作:${NC}"
-echo -e "    运行 OAuth 授权脚本: ${CYAN}sudo ~/04-authorize-copilot.sh${NC}"
+echo -e "    运行授权脚本: ${CYAN}sudo ~/04-authorize-copilot.sh${NC}"
 echo ""
 echo -e "  ${YELLOW}如需配置 HTTPS:${NC}"
 echo -e "    运行: ${CYAN}sudo ~/03-setup-https.sh your-domain.com${NC}"

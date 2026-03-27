@@ -22,8 +22,8 @@
 │                        ▼                                        │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │           Copilot Proxy (端口 15432)                      │   │
-│  │          Python Flask / systemd 服务                       │   │
-│  │       OAuth 认证 → GitHub Copilot API                     │   │
+│  │      Node.js @jer-y/copilot-proxy / systemd 服务          │   │
+│  │    支持 OpenAI + Anthropic 双格式 → GitHub Copilot API     │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                        │                                        │
 └────────────────────────┼────────────────────────────────────────┘
@@ -38,10 +38,16 @@
 
 **请求流程：**
 ```
-用户 (OpenAI 兼容客户端)
+OpenAI 兼容客户端 (GPT/Gemini)
   → Nginx (HTTPS 终止)
     → new-api (API Key 认证 + 用量管理)
-      → Copilot Proxy (Copilot OAuth Token 管理)
+      → Copilot Proxy /v1/chat/completions (OpenAI 格式)
+        → GitHub Copilot API
+
+Claude Code (Anthropic 原生格式)
+  → Nginx (HTTPS 终止)
+    → new-api (API Key 认证 + 用量管理)
+      → Copilot Proxy /v1/messages (Anthropic 格式)
         → GitHub Copilot API
 ```
 
@@ -68,10 +74,10 @@
 | 文件 | 说明 | 运行位置 |
 |------|------|---------|
 | `01-create-vm.ps1` | 创建 Azure VM | 本地 Windows (PowerShell) |
-| `02-setup-vm.sh` | 安装 Docker/Nginx/Copilot Proxy | VM 上 (SSH) |
+| `02-setup-vm.sh` | 安装 Docker/Node.js/Nginx/Copilot Proxy | VM 上 (SSH) |
 | `03-setup-https.sh` | 配置 HTTPS (Let's Encrypt) | VM 上 (SSH) |
-| `04-authorize-copilot.sh` | Copilot OAuth 授权 | VM 上 (SSH) |
-| `copilot_proxy_patches.py` | Copilot Proxy 代码补丁 | VM 上 (自动调用) |
+| `04-authorize-copilot.sh` | Copilot Proxy GitHub 授权 | VM 上 (SSH) |
+| `05-auto-restart.ps1` | 配置 VM 自动重启 | 本地 Windows (PowerShell) |
 
 ## 部署步骤
 
@@ -99,7 +105,7 @@
 $vmIp = "YOUR_VM_IP"
 
 # 上传所有脚本
-scp 02-setup-vm.sh 03-setup-https.sh 04-authorize-copilot.sh copilot_proxy_patches.py azureuser@${vmIp}:~/
+scp 02-setup-vm.sh 03-setup-https.sh 04-authorize-copilot.sh azureuser@${vmIp}:~/
 ```
 
 ### 第三步：安装软件环境
@@ -116,23 +122,22 @@ sudo ~/02-setup-vm.sh
 
 脚本将自动完成：
 - Docker + Docker Compose 安装
-- Python3 虚拟环境配置
+- Node.js 22 + @jer-y/copilot-proxy 安装
 - Nginx + Certbot 安装
-- Copilot Proxy 克隆与补丁
 - new-api Docker 容器启动
 - systemd 服务配置
 
-### 第四步：Copilot OAuth 授权
+### 第四步：Copilot GitHub 授权
 
 ```bash
 sudo ~/04-authorize-copilot.sh
 ```
 
 按照屏幕提示：
-1. 在浏览器中打开 `https://github.com/login/device`
-2. 输入显示的设备码
-3. 授权 GitHub Copilot 访问
-4. 等待授权完成，服务将自动重启
+1. 运行 `copilot-proxy auth` 获取设备码
+2. 在浏览器中打开 `https://github.com/login/device`
+3. 输入设备码并授权 GitHub Copilot 访问
+4. 输入获取的 Token，服务将自动启动
 
 ### 第五步：配置 HTTPS（可选）
 
@@ -148,54 +153,44 @@ sudo ~/03-setup-https.sh your-domain.com
 2. 首次访问时会提示**创建管理员账号**，设置用户名和密码
 3. **⚠️ 请使用强密码！**
 
-#### 添加 Copilot 渠道
+#### NewAPI 渠道配置
+
+Node.js 版 Copilot Proxy 同时支持 OpenAI (`/v1/chat/completions`) 和 Anthropic (`/v1/messages`) 两种格式，因此需要配置 **两个渠道**：
+
+##### 渠道 1：Anthropic 类型（Claude 模型）
 
 1. 进入 **渠道** → **添加新的渠道**
 2. 配置如下：
-   - **类型**：OpenAI
-   - **名称**：Copilot Proxy
+   - **类型**：Anthropic (type=14)
+   - **名称**：Copilot Proxy - Claude
    - **Base URL**：`http://host.docker.internal:15432`
    - **密钥**：任意值（如 `sk-copilot`，Copilot Proxy 不校验密钥）
-   - **模型**：手动添加以下模型
+   - **模型**：手动添加 Claude 模型
      ```
      claude-opus-4.6-1m, claude-opus-4.6, claude-opus-4.5,
-     claude-sonnet-4.6, claude-sonnet-4.5, claude-sonnet-4, claude-haiku-4.5,
+     claude-sonnet-4.6, claude-sonnet-4.5, claude-sonnet-4, claude-haiku-4.5
+     ```
+
+> 💡 **为什么用 Anthropic 类型？** new-api 的 Anthropic 渠道会将 `/v1/messages` 请求透传给后端，
+> Copilot Proxy 原生支持 Anthropic 格式，全程无格式转换。这解决了之前 OpenAI 渠道 + Claude 模型名映射
+> 导致的格式转换 bug（如 Claude Code 重复回答问题）。
+
+##### 渠道 2：OpenAI 类型（GPT/Gemini/Embedding 模型）
+
+1. 进入 **渠道** → **添加新的渠道**
+2. 配置如下：
+   - **类型**：OpenAI (type=1)
+   - **名称**：Copilot Proxy - OpenAI
+   - **Base URL**：`http://host.docker.internal:15432`
+   - **密钥**：任意值（如 `sk-copilot`）
+   - **模型**：手动添加 GPT/Gemini 模型
+     ```
      gpt-5.4, gpt-5.4-mini, gpt-5.3-codex, gpt-5.2-codex, gpt-5.2,
      gpt-5.1, gpt-5.1-codex, gpt-5.1-codex-mini, gpt-5.1-codex-max, gpt-5-mini,
      gpt-4o, gpt-4o-mini, gpt-4.1, gpt-4,
      gemini-3.1-pro-preview, gemini-3-pro-preview, gemini-3-flash-preview, gemini-2.5-pro
      ```
 3. 点击 **提交**
-4. 测试渠道连接
-
-> ⚠️ **重要：Claude 模型名映射**
-> 
-> new-api 检测到模型名含 `claude-` 时，会自动切换为 Anthropic 格式（`/v1/messages`），
-> 但 Copilot Proxy 只支持 OpenAI 格式（`/chat/completions`），导致 404 错误。
-> 
-> **解决方案**：使用模型名映射，用不含 `claude-` 的自定义名称：
-> 
-> 1. 在渠道的模型列表中，用自定义名替代 Claude 原始名，例如：
->    ```
->    copilot-opus-1m, copilot-opus, copilot-opus-45,
->    copilot-sonnet, copilot-sonnet-45, copilot-sonnet-4, copilot-haiku
->    ```
-> 2. 在渠道设置的**「模型重定向」**中配置映射：
->    ```
->    copilot-opus-1m => claude-opus-4.6-1m
->    copilot-opus => claude-opus-4.6
->    copilot-opus-45 => claude-opus-4.5
->    copilot-sonnet => claude-sonnet-4.6
->    copilot-sonnet-45 => claude-sonnet-4.5
->    copilot-sonnet-4 => claude-sonnet-4
->    copilot-haiku => claude-haiku-4.5
->    ```
-> 3. 这样 new-api 用 OpenAI 格式发送请求，而 Copilot Proxy 收到的 model 参数仍是正确的 Claude 模型名
->
-> GPT 和 Gemini 模型**无需映射**，直接使用原始名称即可。
-> 
-> **渠道测试注意**：测试时 Endpoint Type 请选择 **Auto-detect** 或 **OpenAI**，不要选 Anthropic。
-> 如果测试显示 Failed 但实际 Playground 能用，属于正常现象（测试使用非流式请求，某些模型仅支持流式）。
 
 #### 创建 API Key
 
@@ -205,7 +200,9 @@ sudo ~/03-setup-https.sh your-domain.com
 
 ### 使用方式
 
-使用 OpenAI 兼容客户端，配置：
+#### OpenAI 兼容客户端
+
+配置：
 - **API Base URL**：`https://your-domain.com/v1` 或 `http://YOUR_VM_IP:3000/v1`
 - **API Key**：new-api 中创建的令牌
 
@@ -238,15 +235,23 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-## 补丁说明
+#### Claude Code 配置
 
-`copilot_proxy_patches.py` 对原始 Copilot Proxy 做了以下修改：
+Claude Code 原生使用 Anthropic Messages 格式（`/v1/messages`），通过 Anthropic 渠道透传，无需格式转换。
 
-| 补丁 | 说明 |
-|------|------|
-| 动态 API 端点 | 从 token 响应的 `endpoints.api` 字段读取 API 地址，兼容企业版和个人版 |
-| 去除 `/v1/` 前缀 | new-api 发送请求时会带 `/v1/`，但 Copilot API 不需要这个前缀 |
-| GPT-5.x 路由 | GPT-5.x 系列模型需要使用 `/responses` 端点而非 `/chat/completions` |
+编辑 `~/.claude/settings.json`，添加环境变量：
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://your-domain.com",
+    "ANTHROPIC_AUTH_TOKEN": "sk-your-newapi-token"
+  }
+}
+```
+
+> 💡 `ANTHROPIC_BASE_URL` 不需要带 `/v1` 后缀，Claude Code 会自动拼接 `/v1/messages`。
+> `ANTHROPIC_AUTH_TOKEN` 使用 new-api 中创建的 API Key。
 
 ## 故障排查
 
@@ -259,7 +264,7 @@ print(response.choices[0].message.content)
 sudo systemctl status copilot-proxy
 
 # 查看日志
-sudo journalctl -u copilot-proxy -f --no-pager
+copilot-proxy logs -f
 
 # 重新授权
 sudo ~/04-authorize-copilot.sh
@@ -290,17 +295,14 @@ sudo certbot renew --dry-run
 sudo nginx -t
 ```
 
-#### 4. GPT-5.x 模型返回错误
-
-GPT-5.x 系列模型使用 `/responses` 端点。如果返回错误，检查：
+#### 4. 模型返回错误
 
 ```bash
-# 查看 Copilot Proxy 日志中的请求转换
-sudo journalctl -u copilot-proxy --since "5 minutes ago" --no-pager
+# 查看 Copilot Proxy 最近日志
+copilot-proxy logs -f
 
-# 确认补丁已正确应用
-grep "RESPONSES_MODELS" /opt/copilot-proxy/Copilot_Proxy/main.py
-grep "responses_to_chat" /opt/copilot-proxy/Copilot_Proxy/main.py
+# 检查服务状态
+copilot-proxy status
 ```
 
 #### 5. VM 重启后服务未自动启动
@@ -319,7 +321,7 @@ sudo docker start new-api
 
 | 组件 | 日志查看方式 |
 |------|------------|
-| Copilot Proxy | `sudo journalctl -u copilot-proxy -f` |
+| Copilot Proxy | `copilot-proxy logs -f` 或 `sudo journalctl -u copilot-proxy -f` |
 | new-api | `sudo docker logs -f new-api` |
 | Nginx | `sudo tail -f /var/log/nginx/error.log` |
 
@@ -327,7 +329,7 @@ sudo docker start new-api
 
 1. **⚠️ 立即修改 new-api 默认密码**（默认 root/123456）
 2. **NSG 规则**：生产环境建议限制 3000 端口的来源 IP，仅通过 Nginx 反代访问
-3. **OAuth Token**：Token 保存在 Copilot Proxy 进程内存中，不写入磁盘
+3. **OAuth Token**：Token 保存在 `~/.local/share/copilot-proxy/` 数据目录中
 4. **HTTPS**：强烈建议配置 HTTPS，防止 API Key 在传输中泄露
 5. **定期更新**：
    ```bash
@@ -337,16 +339,22 @@ sudo docker start new-api
    # 重新运行 02-setup-vm.sh 中的 docker run 命令
 
    # 更新 Copilot Proxy
-   cd /opt/copilot-proxy/Copilot_Proxy && sudo git pull
-   sudo python3 ~/copilot_proxy_patches.py
+   sudo npm install -g @jer-y/copilot-proxy
    sudo systemctl restart copilot-proxy
    ```
 
 ## 维护命令速查
 
 ```bash
-# 服务管理
+# Copilot Proxy 管理
+copilot-proxy status                # 查看状态
+copilot-proxy logs -f               # 查看日志（实时）
+copilot-proxy restart               # 重启
+
+# systemd 服务管理
 sudo systemctl {start|stop|restart|status} copilot-proxy
+
+# Docker 容器管理
 sudo docker {start|stop|restart} new-api
 
 # 查看日志
