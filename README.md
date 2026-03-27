@@ -360,3 +360,43 @@ sudo ss -tlnp | grep -E '3000|15432|80|443'
 df -h
 docker system df
 ```
+
+## 第五步：配置 VM 自动重启（可选）
+
+Azure 内部订阅的治理策略可能会自动关闭 VM。此脚本部署 Azure Automation 定时检查 VM 状态，关机后自动拉起。
+
+### 原理
+
+```
+每小时 xx:03 触发 → 检查 Tag（今天启动过？）→ 检查电源状态
+  ├─ Running → 跳过
+  ├─ Deallocated → 启动 VM + 写 Tag（当天不再重复启动）
+  └─ 已启动过 → 跳过
+```
+
+### 部署
+
+```powershell
+.\05-auto-restart.ps1 `
+  -SubscriptionId "你的订阅ID" `
+  -ResourceGroup "copilot-proxy-rg" `
+  -VmName "copilot-vm" `
+  -Region "eastasia" `
+  -TimezoneOffset 8 `
+  -MinuteOfHour 3
+```
+
+### 资源说明
+
+| 组件 | 说明 |
+|------|------|
+| Automation Account | `{VM_NAME}-AutoRestart`，Free 层（500分钟/月免费，实际用 ~12分钟/月） |
+| Managed Identity | VM Contributor + Tag Contributor，scope 限定资源组 |
+| Runbook | PowerShell 7.2，幂等设计（Tag 控制每天只启动一次） |
+| Schedule | 24 个，每小时 xx:03 UTC 触发 |
+
+### 清理
+
+```bash
+az automation account delete --name {VM_NAME}-AutoRestart --resource-group {RESOURCE_GROUP} --yes
+```
