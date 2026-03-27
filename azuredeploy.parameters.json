@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "adminUsername": {
+      "value": "azureuser"
+    },
+    "adminSshKey": {
+      "value": "ssh-rsa AAAA...替换为你的 SSH 公钥..."
+    },
+    "dnsLabelPrefix": {
+      "value": ""
+    },
+    "vmSize": {
+      "value": "Standard_B2as_v2"
+    },
+    "location": {
+      "value": "eastasia"
+    }
+  }
+}

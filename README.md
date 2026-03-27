@@ -1,5 +1,48 @@
 # Copilot Proxy + new-api 部署指南
 
+## 一键部署（推荐）
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fmikaelfun%2Fcopilot-proxy-azure-deploy%2Fmaster%2Fazuredeploy.json)
+
+### 部署步骤
+
+1. 点击上方按钮 → Azure Portal 打开部署页面
+2. 填写参数（SSH 公钥、VM 大小等）
+3. 点击 "Review + Create" → "Create"
+4. 等待部署完成（约 5-10 分钟）
+5. SSH 登录 VM，运行 Copilot OAuth 授权：
+   ```bash
+   ssh azureuser@<部署输出中的IP>
+   sudo copilot-proxy auth
+   # 按提示在浏览器中完成 GitHub 授权
+   # 授权成功后启动服务：
+   sudo systemctl start copilot-proxy
+   ```
+6. 配置 new-api（参见下方"配置 new-api"章节）
+
+### 参数说明
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `adminUsername` | VM 管理员用户名 | `azureuser` |
+| `adminSshKey` | SSH 公钥（`ssh-rsa AAAA...`） | 必填 |
+| `dnsLabelPrefix` | 公网 IP DNS 前缀（可选） | 空 |
+| `vmSize` | VM 规格 | `Standard_B2as_v2` |
+| `location` | 部署区域 | 资源组所在区域 |
+
+### 部署完成后的输出
+
+| 输出项 | 说明 |
+|--------|------|
+| `publicIpAddress` | VM 公网 IP 地址 |
+| `sshCommand` | SSH 连接命令 |
+| `newApiUrl` | new-api 访问地址 |
+| `fqdn` | DNS 域名（如已配置） |
+
+> 💡 如果你更喜欢手动分步部署，请参考下方"手动部署步骤"章节。
+
+---
+
 ## 架构概览
 
 ```
@@ -73,13 +116,18 @@ Claude Code (Anthropic 原生格式)
 
 | 文件 | 说明 | 运行位置 |
 |------|------|---------|
-| `01-create-vm.ps1` | 创建 Azure VM | 本地 Windows (PowerShell) |
-| `02-setup-vm.sh` | 安装 Docker/Node.js/Nginx/Copilot Proxy | VM 上 (SSH) |
+| `azuredeploy.json` | ARM 模板（一键部署） | Azure Portal |
+| `azuredeploy.parameters.json` | ARM 参数示例文件 | Azure Portal / CLI |
+| `scripts/setup-all.sh` | VM 自动安装脚本（ARM 模板调用） | VM 上 (自动) |
+| `01-create-vm.ps1` | 创建 Azure VM（手动部署） | 本地 Windows (PowerShell) |
+| `02-setup-vm.sh` | 安装 Docker/Node.js/Nginx/Copilot Proxy（手动部署） | VM 上 (SSH) |
 | `03-setup-https.sh` | 配置 HTTPS (Let's Encrypt) | VM 上 (SSH) |
-| `04-authorize-copilot.sh` | Copilot Proxy GitHub 授权 | VM 上 (SSH) |
+| `04-authorize-copilot.sh` | Copilot Proxy GitHub 授权（手动部署） | VM 上 (SSH) |
 | `05-auto-restart.ps1` | 配置 VM 自动重启 | 本地 Windows (PowerShell) |
 
-## 部署步骤
+## 手动部署步骤
+
+> 以下是分步手动部署方式，如已使用一键部署则可跳过。
 
 ### 第一步：创建 Azure VM
 
