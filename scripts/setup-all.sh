@@ -30,6 +30,10 @@ fi
 
 log "开始安装 Copilot Proxy + new-api 环境..."
 
+# ========== 读取参数 ==========
+DOMAIN_NAME="${1:-}"
+log "域名参数: ${DOMAIN_NAME:-（未指定，跳过 HTTPS 配置）}"
+
 # ========== 1. 系统更新 ==========
 step "1/7 更新系统软件包"
 
@@ -180,8 +184,37 @@ rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 ok "Nginx 反向代理配置完成"
 
+# ========== 7/8 HTTPS 配置（如果提供了域名）==========
+if [[ -n "$DOMAIN_NAME" ]]; then
+    step "7/8 配置 HTTPS (Let's Encrypt)"
+
+    # 更新 Nginx server_name
+    sed -i "s/server_name _;/server_name ${DOMAIN_NAME};/" /etc/nginx/sites-available/new-api
+    nginx -t && systemctl reload nginx
+
+    # 申请 Let's Encrypt 证书（非交互模式）
+    certbot --nginx -d "$DOMAIN_NAME" --non-interactive --agree-tos --register-unsafely-without-email --redirect || {
+        warn "Let's Encrypt 证书申请失败（DNS 可能尚未生效），稍后可手动运行："
+        warn "  sudo certbot --nginx -d ${DOMAIN_NAME}"
+    }
+
+    # 设置自动续签
+    systemctl enable certbot.timer 2>/dev/null || true
+    ok "HTTPS 配置完成: https://${DOMAIN_NAME}"
+else
+    step "7/8 跳过 HTTPS（未提供域名）"
+    warn "如需配置 HTTPS，部署后运行："
+    warn "  sudo certbot --nginx -d your-domain.com"
+fi
+
+# ========== 8/8 完成 ==========
+
 # ========== 获取公网 IP ==========
 PUBLIC_IP=$(curl -s -4 ifconfig.me || curl -s -4 icanhazip.com || echo "<PUBLIC_IP>")
+ACCESS_URL="http://${PUBLIC_IP}"
+if [[ -n "$DOMAIN_NAME" ]]; then
+    ACCESS_URL="https://${DOMAIN_NAME}"
+fi
 
 # ========== 完成输出 ==========
 echo ""
@@ -192,8 +225,11 @@ echo ""
 echo "  已部署组件:"
 echo "    ● Docker           — 运行中"
 echo "    ● Node.js          — $(node -v)"
-echo "    ● new-api          — http://${PUBLIC_IP}:3000"
-echo "    ● Nginx            — http://${PUBLIC_IP}:80 → 反向代理到 new-api"
+echo "    ● new-api          — ${ACCESS_URL}"
+echo "    ● Nginx            — 反向代理 → new-api"
+if [[ -n "$DOMAIN_NAME" ]]; then
+echo "    ● HTTPS            — Let's Encrypt (${DOMAIN_NAME})"
+fi
 echo "    ○ Copilot Proxy    — 需要先完成 GitHub OAuth 授权"
 echo ""
 echo "  📝 还需一步 — SSH 登录 VM 完成 GitHub Copilot 授权:"
@@ -204,7 +240,7 @@ echo "    # 按照提示在浏览器中完成 GitHub 设备码授权"
 echo "    # 授权成功后启动服务："
 echo "    sudo systemctl start copilot-proxy"
 echo ""
-echo "  🔗 访问 new-api: http://${PUBLIC_IP}:3000"
+echo "  🔗 访问 new-api: ${ACCESS_URL}"
 echo "     首次访问会提示创建管理员账号，请设置强密码。"
 echo ""
 echo "========================================================"

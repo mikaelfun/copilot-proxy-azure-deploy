@@ -12,17 +12,25 @@
         "description": "VM 管理员用户名"
       }
     },
-    "adminSshKey": {
+    "adminPassword": {
       "type": "securestring",
+      "minLength": 12,
       "metadata": {
-        "description": "SSH 公钥（以 ssh-rsa 开头）。用于 SSH 登录 VM 完成 GitHub OAuth 授权。"
+        "description": "VM 登录密码（至少12位，需包含大小写字母、数字和特殊字符）"
+      }
+    },
+    "domainName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "（可选）自定义域名，如 myproxy.example.com。填写后自动配置 HTTPS (Let's Encrypt)。需提前将域名 DNS A 记录指向部署后的 VM 公网 IP。"
       }
     },
     "dnsLabelPrefix": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "（可选）公网 IP 的 DNS 标签前缀，例如填 'mycopilot' 则访问地址为 mycopilot.<region>.cloudapp.azure.com"
+        "description": "（可选）Azure 公网 IP 的 DNS 标签，如填 'mycopilot' 则可通过 mycopilot.<region>.cloudapp.azure.com 访问"
       }
     },
     "vmSize": {
@@ -204,16 +212,9 @@
         "osProfile": {
           "computerName": "[variables('vmName')]",
           "adminUsername": "[parameters('adminUsername')]",
+          "adminPassword": "[parameters('adminPassword')]",
           "linuxConfiguration": {
-            "disablePasswordAuthentication": true,
-            "ssh": {
-              "publicKeys": [
-                {
-                  "path": "[concat('/home/', parameters('adminUsername'), '/.ssh/authorized_keys')]",
-                  "keyData": "[parameters('adminSshKey')]"
-                }
-              ]
-            }
+            "disablePasswordAuthentication": false
           }
         },
         "storageProfile": {
@@ -259,7 +260,7 @@
           ]
         },
         "protectedSettings": {
-          "commandToExecute": "bash setup-all.sh 2>&1 | tee /var/log/setup-all.log"
+          "commandToExecute": "[concat('bash setup-all.sh \"', parameters('domainName'), '\" 2>&1 | tee /var/log/setup-all.log')]"
         }
       }
     }

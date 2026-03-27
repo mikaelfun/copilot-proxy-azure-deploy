@@ -5,8 +5,11 @@
     "adminUsername": {
       "value": "azureuser"
     },
-    "adminSshKey": {
-      "value": "ssh-rsa AAAA...替换为你的 SSH 公钥..."
+    "adminPassword": {
+      "value": ""
+    },
+    "domainName": {
+      "value": ""
     },
     "dnsLabelPrefix": {
       "value": ""
