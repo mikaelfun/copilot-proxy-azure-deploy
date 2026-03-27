@@ -7,7 +7,7 @@
 ### 部署步骤
 
 1. 点击上方按钮 → Azure Portal 打开部署页面
-2. 填写参数（SSH 公钥、VM 大小等）
+2. 填写参数（密码、VM 大小、域名等）
 3. 点击 "Review + Create" → "Create"
 4. 等待部署完成（约 5-10 分钟）
 5. SSH 登录 VM，运行 Copilot OAuth 授权：
@@ -25,10 +25,26 @@
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `adminUsername` | VM 管理员用户名 | `azureuser` |
-| `adminSshKey` | SSH 公钥（`ssh-rsa AAAA...`） | 必填 |
-| `dnsLabelPrefix` | 公网 IP DNS 前缀（可选） | 空 |
+| `adminPassword` | VM 登录密码（至少12位，需含大小写+数字+特殊字符） | 必填 |
+| `domainName` | 自定义域名（可选），填写后自动配置 HTTPS | 空 |
+| `dnsLabelPrefix` | Azure 公网 IP DNS 前缀（可选） | 空 |
 | `vmSize` | VM 规格 | `Standard_B2as_v2` |
 | `location` | 部署区域 | 资源组所在区域 |
+
+### 域名购买（可选）
+
+如需 HTTPS 访问，可在 Azure 直接购买域名：
+
+1. Azure Portal → 搜索 **App Service Domain** → 点击 **"Buy domain"**
+2. 输入想要的域名（如 `mycopilot.com`）→ 检查可用性 → 购买
+3. 购买完成后 → 进入域名资源 → **DNS zone** 会自动创建
+4. 添加 **A 记录**：`@` → 指向 VM 的公网 IP
+5. 等待 DNS 生效（几分钟到几小时）
+6. 在一键部署的 `domainName` 参数里填入你的域名即可
+
+> 💡 如果已有域名（Godaddy、Cloudflare 等），只需在 DNS 服务商添加 A 记录指向 VM IP。
+>
+> 💡 不买域名也可以用：填写 `dnsLabelPrefix`（如 `myproxy`），会自动获得 `myproxy.<region>.cloudapp.azure.com` 地址，但此地址**不支持自动 HTTPS**。
 
 ### 部署完成后的输出
 
