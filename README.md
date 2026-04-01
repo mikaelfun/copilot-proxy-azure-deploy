@@ -369,7 +369,23 @@ copilot-proxy logs -f
 copilot-proxy status
 ```
 
-#### 5. VM 重启后服务未自动启动
+#### 5. Claude Code 大上下文请求被 413 拒绝
+
+使用 Claude Code 1M 上下文模型（如 `claude-opus-4-6[1m]`）时，当对话累积到 ~200K tokens（请求体约 800KB），Nginx 会返回 `413 Request Entity Too Large`，因为 **Nginx 默认 `client_max_body_size` 仅 1MB**。
+
+**症状**：Claude Code 在上下文占用约 10-20% 时突然丢失全部上下文，表现得像新 session。
+
+**修复**（如果是旧版部署，需手动添加）：
+
+```bash
+# 在 Nginx 站点配置的 server 块中添加：
+sudo sed -i '/server_name/a\\    client_max_body_size 50m;' /etc/nginx/sites-enabled/new-api
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+> 新版部署脚本已包含此配置，无需手动处理。
+
+#### 6. VM 重启后服务未自动启动
 
 ```bash
 # 检查服务是否启用了自动启动

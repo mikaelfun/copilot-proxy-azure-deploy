@@ -162,6 +162,10 @@ server {
     listen [::]:80 default_server;
     server_name _;
 
+    # Allow large request bodies (required for 1M context LLM requests)
+    # Nginx default is 1MB, which blocks requests at ~200K tokens
+    client_max_body_size 50m;
+
     # new-api 反向代理
     location / {
         proxy_pass http://127.0.0.1:3000;
